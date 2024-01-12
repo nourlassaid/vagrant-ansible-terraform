@@ -1,0 +1,81 @@
+- name: Setup Terraform on New Ubuntu 22.04 System
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Update the APT Package Cache
+      become: true
+      apt:
+        update_cache: true
+    - name: Add the signing key
+      become: true
+      apt_key:
+        url: "https://apt.releases.hashicorp.com/gpg"
+        state: present
+    - name: Add the Hashicorp Repo to Ubuntu
+      become: true
+      apt_repository:
+        repo: "deb [arch=amd64] https://apt.releases.hashicorp.com jammy main"
+        state: present
+    - name: Install software from standard repos and hashicorp
+      become: true
+      apt:
+        name:
+          - docker.io
+          - gnupg
+          - software-properties-common
+          - curl
+          - terraform
+        state: present
+
+    - name: Reload Docker daemon
+      become: true
+      systemd:
+        name: docker
+        state: restarted
+
+    - name: Verify "vagrant" is in the "docker" group
+      become: true
+      command: "groups vagrant"
+      register: vagrant_groups
+
+    - name: Add "vagrant" to the "docker" group if not present
+      become: true
+      command: "usermod -aG docker vagrant"
+      when: "'docker' not in vagrant_groups.stdout"
+
+    - name: Verify Docker daemon socket permissions
+      become: true
+      command: "ls -l /var/run/docker.sock"
+      register: docker_sock_permissions
+
+    - name: Adjust Docker daemon socket permissions if needed
+      become: true
+      command: "sudo chmod 666 /var/run/docker.sock"
+      when: "'rw-rw-rw-' not in docker_sock_permissions.stdout"
+
+    - name: Create the directory for terraform project
+      file:
+        path: "/home/vagrant/terraform/web/"
+        state: directory
+        mode: "0755"
+      become: true
+      become_user: vagrant
+    
+    - name: We copy the main.tf terraform file to the VM
+      copy:
+        src: "/home/dhouha/work/main.tf"
+        dest: "/home/vagrant/terraform/web/main.tf"
+
+    - name: Change the working directory to the terraform dir and run terraform init
+      ansible.builtin.command:
+        cmd: "terraform init"
+        chdir: "/home/vagrant/terraform/web/"
+      become: true
+      become_user: vagrant
+
+    - name: Change the working directory to the terraform dir and run terraform apply
+      ansible.builtin.command:
+        cmd: "terraform apply -auto-approve"
+        chdir: "/home/vagrant/terraform/web/"
+      become: true
+      become_user: vagrant
